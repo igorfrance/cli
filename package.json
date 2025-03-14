@@ -1,7 +1,7 @@
 {
     "name": "@igorf/cli",
     "version": "1.0.0",
-    "description": "Command-line utilities for development in node.js",
+    "description": "Command-line utilities",
     "repository": "https://github.com/igorfrance/cli.git",
     "main": "dist/index.js",
     "scripts": {
