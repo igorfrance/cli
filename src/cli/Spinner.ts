@@ -71,9 +71,6 @@ export class Spinner {
             return this;
         }
 
-        const cursorPos = await this.getCursorPos();
-        const currentLine = cursorPos.rows;
-
         this.running = true;
         this.clear();
         // hide the cursor
@@ -93,7 +90,7 @@ export class Spinner {
             }
 
             this.print(this.getSpinnerText(spinner));
-            readline.cursorTo(process.stdout, 0, currentLine);// - 1);
+            readline.cursorTo(process.stdout, 0);
             index = index >= spinnerFrames.length ? 0 : index + 1;
 
         }, interval);
@@ -149,27 +146,5 @@ export class Spinner {
         process.stdout.write("\n");
 
         return this;
-    }
-
-    private async getCursorPos(): Promise<{ rows: number; cols: number }> {
-        return new Promise((resolve) => {
-            const termcodes = { cursorGetPosition: '\u001b[6n' };
-        
-            process.stdin.setEncoding('utf8');
-            process.stdin.setRawMode(true);
-        
-            const readfx = function () {
-                const buf = process.stdin.read();
-                const str = JSON.stringify(buf); // "\u001b[9;1R"
-                const regex = /\[(.*)/g;
-                const xy = regex.exec(str)[0].replace(/\[|R"/g, '').split(';');
-                const pos = { rows: parseInt(xy[0]), cols: parseInt(xy[1]) };
-                process.stdin.setRawMode(false);
-                resolve(pos);
-            }
-        
-            process.stdin.once('readable', readfx);
-            process.stdout.write(termcodes.cursorGetPosition);
-        });
     }
 }
