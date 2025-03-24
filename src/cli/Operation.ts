@@ -1,40 +1,54 @@
 import { CliLogger } from "./CliLogger";
-import { Spinner } from "./Spinner";
+import { Spinner, SpinnerOptions } from "./Spinner";
 
 export class Operation {
 
-    private readonly spinner = new Spinner();
-    private readonly errors: string[] = [];
-    private readonly warnings: string[] = [];
-    private count = 0;
-    private length = 0;
+    readonly spinner;
+    readonly errors: string[] = [];
+    readonly warnings: string[] = [];
 
-    constructor(readonly name: string, readonly logger: CliLogger = new CliLogger(Operation.name)) {
+    private _count = 0;
+    private _length = 0;
+
+    constructor(readonly name: string, readonly logger: CliLogger = new CliLogger(Operation.name), options?: Partial<SpinnerOptions>) {
+        this.spinner = new Spinner(options);
+    }
+
+    get count() {
+        return this._count;
+    }
+
+    get length() {
+        return this._length;
     }
 
     async start(length = 0) {
-        this.length = length;
-        this.logger.info(this.name);
-        this.spinner.start();
+        this._length = length;
+        await this.spinner.start();
+    }
+
+    stop() {
+        this.spinner.stop();
     }
 
     step(message: string) {
-        if (this.length > 0) {
-            this.count += 1;
-            message = `${this.count}/${this.length} ${message}`;
+        if (this._length > 0) {
+            this._count += 1;
+            message = `${this._count}/${this._length} ${message}`;
         }
 
         this.log(message);
     }
 
-    finish(message: string = "Done.") {
+    finish(message: string = "Done.", errored = false) {
+        this.spinner.stopAndClear();
         if (this.errors.length > 0) {
             message = `${message} (${this.errors.length} errors)`;
         }
-        if (this.warnings.length > 0) {
+        else if (this.warnings.length > 0) {
             message = `${message} (${this.warnings.length} warnings)`;
         }
-        if (this.errors.length > 0) {
+        if (errored || this.errors.length > 0) {
             this.spinner.fail(message);
         }
         else if (this.warnings.length > 0) {
@@ -49,17 +63,17 @@ export class Operation {
         this.spinner.text = message;
     }
 
-    error(message: string) {
+    async error(message: string) {
         this.errors.push(message);
         this.spinner.stopAndClear();
         this.logger.error(message);
-        this.spinner.start();
+        await this.spinner.start();
     }
 
-    warn(message: string) {
+    async warn(message: string) {
         this.warnings.push(message);
         this.spinner.stopAndClear();
         this.logger.warn(message);
-        this.spinner.start();
+        await this.spinner.start();
     }
 }

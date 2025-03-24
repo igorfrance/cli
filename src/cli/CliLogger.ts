@@ -2,19 +2,19 @@
 import { ColorFx } from "./ColorFx";
 
 export const LogLevelValue = {
-    verbose: 10,
-    debug: 50,
-    chapter: 250,
-    title: 250,
-    header: 250,
-    section: 250,
-    note: 250,
-    log: 250,
-    info: 250,
-    warn: 300,
-    error: 400,
-    fatal: 900,
-    all: 1000,
+    all: 0,
+    verbose: 0,
+    debug: 10,
+    log: 50,
+    info: 50,
+    chapter: 50,
+    title: 50,
+    header: 50,
+    section: 50,
+    note: 50,
+    warn: 80,
+    error: 95,
+    fatal: 100,
 };
 
 export type LogLevel = keyof typeof LogLevelValue;
@@ -37,6 +37,8 @@ export class CliLoggerOptions {
 
     dateTimeFormat? = "{day}-{month}-{year} {hour}:{minute}:{second}";
 
+    messageFormat? = "{timestamp} {level} {context} {message}";
+
     constructor(options: Partial<CliLoggerOptions> = {}) {
         Object.assign(this, options);
     }
@@ -46,6 +48,15 @@ export class CliLogger {
 
     readonly name: string = "";
     readonly options: CliLoggerOptions;
+
+    private messageFormatters = {
+        timestamp: this.getTimestamp.bind(this),
+        level: this.formatLogLevel.bind(this),
+        context: this.formatContext.bind(this),
+        message: this.prepareMessageText.bind(this)
+    }
+
+    private _messageFormat = ["timestamp", "level", "context", "message"];
 
     constructor(arg1?: string | CliLoggerOptions, arg2?: CliLoggerOptions) {
         if (arguments.length === 2) {
@@ -64,6 +75,27 @@ export class CliLogger {
         else {
             this.options = new CliLoggerOptions();
         }
+
+        if (this.options.messageFormat) {
+            this.messageFormat = this.options.messageFormat;
+        }
+
+    }
+
+    get messageFormat() {
+        return this.options.messageFormat;
+    }
+
+    set messageFormat(value: string) {
+        this.options.messageFormat = value;
+        this._messageFormat = (value.match(/\{.*?\}/g) || [0]).slice(1).map((name) => {
+            name = name.replace(/\{(.*?)\}/, "$1");
+            const fn = this.messageFormatters[name];
+            if (!fn) {
+                throw new Error(`Invalid message format: ${name}`);
+            }
+            return name;
+        });
     }
 
     getTimestamp() {
@@ -157,41 +189,68 @@ export class CliLogger {
             throw new Error(`Invalid log level: ${level}`);
         }
 
-        const writeStreamType = level === "error" ? "stderr" : "stdout";
-        const formattedLogLevel = level.toUpperCase().padStart(7, " ");
+        const streamName = this.getLogStream(level);
+        const formattedLogLevel = this.formatLogLevel(level);
+        const messageText = this.prepareMessageText(...messages);
 
-        const messageText = messages.map(x => this.stringifyMessage(x)).join(" ");
-
-        const contextMessage = this.formatContext(this.name);
+        const formattedContext = this.formatContext(this.name);
         const formattedMessage = this.formatMessage(
             level,
             messageText,
             formattedLogLevel,
-            contextMessage,
+            formattedContext,
         );
 
-        process[writeStreamType].write(formattedMessage);
+        this.printToStream(process[streamName], formattedMessage);
     }
 
-    protected colorize(message: string, logLevel: LogLevel) {
+    protected prepareMessageText(...messages: unknown[]) {
+        return messages.map(x => this.stringifyMessage(x)).join(" ");
+    }
+  
+    protected printToStream(stream: NodeJS.WriteStream, message: string) {
+        stream.clearLine(0);
+        stream.write(message.trim() + "\n");
+    }
+    
+    protected getLogStream(level: LogLevel): "stderr" | "stdout" {
+        return ["error", "fatal"].includes(level) ? "stderr" : "stdout";
+    }
+
+    protected formatLogLevel(level: LogLevel): string {
+        level = LogLevelValue[level] === LogLevelValue.info ? "info" : level;
+        const logLevel = level.toUpperCase();
+        return logLevel.padStart(7, " ");
+    }
+
+    colorize(message: string, logLevel: LogLevel) {
         const color = CliLogger.getColorByLevel(logLevel);
         return color(message);
     }
 
     protected formatContext(context: string): string {
-        return context ? ColorFx.yellow(`[${context}] `) : "";
+        return context ? ColorFx.yellow(` [${context}]`) : "";
     }
 
     protected formatMessage(
         level: LogLevel,
-        message: unknown,
+        message: string,
         formattedLogLevel: string,
-        contextMessage: string,
+        context: string,
     ) {
-        const maxLevelNonMessage = LogLevelValue[level] < LogLevelValue.debug ? "log" : level;
-        const output = this.colorize(this.stringifyMessage(message), level);
-        formattedLogLevel = this.colorize(formattedLogLevel, maxLevelNonMessage);
-        return `${this.getTimestamp()} ${formattedLogLevel} ${contextMessage}${output}\n`;
+        const colorizedMessage = this.colorize(message, level);
+        const maxLevel = LogLevelValue[level] === LogLevelValue.info ? "info" : level;
+        const colorizedLogLevel = this.colorize(formattedLogLevel, maxLevel);
+        return this.prepareOutputMessage({ 
+            timestamp: this.getTimestamp(), 
+            level: colorizedLogLevel, 
+            context, message: 
+            colorizedMessage
+        });
+    }
+
+    protected prepareOutputMessage(args: { timestamp: string, level: string, context: string, message: string }) {
+        return this._messageFormat.map(name => args[name]).join(" ")
     }
 
     protected stringifyMessage(message: unknown): string {
